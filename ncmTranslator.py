@@ -7,8 +7,6 @@ import struct
 import sys
 import time
 import urllib
-import urllib
-import requests
 from os import fspath
 from pathlib import Path
 
@@ -95,20 +93,27 @@ def dump(file_path, file_name_no_suffix):
 
 
 def file_extension(path):
-    return os.path.splitext(path)[1]
+    filename = os.path.basename(path)
+    parts = filename.split('.')
+    if len(parts) <= 1:
+        return ''
+    return parts[-1]
 
 
 def file_no_extension(path):
-    return os.path.splitext(path)[0]
+    filename = os.path.basename(path)
+    if not filename or filename.startswith('.'):
+        return filename
+    return os.path.splitext(filename)[0]
 
 
 def file_exist(file_name, file_list, file_list_path):
+    base_name = file_no_extension(file_name)
     for file in file_list:
         if os.path.isdir(os.path.join(file_list_path, file)):
-            # print('######### 文件夹, 跳过')
             continue
         for suffix in music_suffix_list:
-            if (file_no_extension(file_name) + "." + suffix) == file:
+            if (base_name + "." + suffix) == file:
                 return True
     return False
 
@@ -116,7 +121,7 @@ def file_exist(file_name, file_list, file_list_path):
 def recursion(file_name, root_dir, file_list):
     full_file = os.path.join(root_dir, file_name)
     if os.path.isfile(full_file):
-        if file_extension(full_file) != ".ncm":
+        if file_extension(full_file) != "ncm":
             print(full_file + '>>>>>>>>>>>>>>> 非ncm文件, 跳过')
             return
         if file_exist(file_name, file_list, root_dir):
