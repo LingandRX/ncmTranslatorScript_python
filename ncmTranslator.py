@@ -10,8 +10,8 @@ import urllib.request
 from os import fspath
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
 from Crypto.Cipher import AES
+from tqdm import tqdm
 
 music_suffix_list = ['mp3', 'wav', 'ape', 'flac', 'MP3', 'WAV', 'APE', 'FLAC']
 
@@ -52,7 +52,7 @@ def dump(file_path, file_name_no_suffix):
 
         f.seek(9, 1)  # 跳过crc32(4字节)和未知5字节
         image_size = struct.unpack('<I', f.read(4))[0]
-        image_data = f.read(image_size)
+        _ = f.read(image_size)  # 专辑图像数据忽略
 
         file_name = file_name_no_suffix + '.' + meta_data['format']
         output_path = os.path.join(os.path.split(file_path)[0], file_name)
@@ -67,11 +67,14 @@ def dump(file_path, file_name_no_suffix):
                     chunk[i] ^= key_box[(key_box[j] + key_box[(key_box[j] + j) & 0xff]) & 0xff]
                 m.write(chunk)
 
-    try:
-        urllib.request.urlretrieve(meta_data['albumPic'],
-                                   os.path.join(os.path.split(file_path)[0], file_name_no_suffix) + '.jpg')
-    except Exception as e:
-        print('下载专辑图片出错', e)
+    # ✅ 专辑图片下载已注释
+    # try:
+    #     urllib.request.urlretrieve(meta_data['albumPic'],
+    #                                os.path.join(os.path.split(file_path)[0], file_name_no_suffix) + '.jpg')
+    # except Exception as e:
+    #     print('下载专辑图片出错', e)
+
+    return output_path  # 返回生成的文件路径
 
 
 def file_extension(path):
@@ -100,15 +103,11 @@ def recursion(file_name, root_dir, file_list, tasks):
     full_file = os.path.join(root_dir, file_name)
     if os.path.isfile(full_file):
         if file_extension(full_file) != "ncm":
-            print(full_file + ' >>> 非ncm文件, 跳过')
             return
         if file_exist(file_name, file_list, root_dir):
-            print(full_file + ' >>> 同名文件已存在, 跳过')
             return
-        print(full_file + ' >>> 提交转码任务')
         tasks.append((full_file, file_no_extension(file_name)))
     elif os.path.isdir(full_file):
-        print('>>> 进入文件夹: ' + full_file)
         for child in os.listdir(full_file):
             recursion(child, full_file, os.listdir(full_file), tasks)
 
@@ -128,18 +127,22 @@ if __name__ == '__main__':
     for file in file_list:
         recursion(file, rootdir, file_list, tasks)
 
-    # 使用多线程池
-    futures = []
-    with ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as executor:
-        for file_path, no_suffix in tasks:
-            futures.append(executor.submit(dump, file_path, no_suffix))
+    total = len(tasks)
+    print(f"共找到 {total} 个待转码文件")
 
-        for future in as_completed(futures):
-            try:
-                future.result()
-                print("任务完成")
-            except Exception as e:
-                logging.exception("转码任务出错", exc_info=e)
+    with ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as executor:
+        futures = {executor.submit(dump, file_path, no_suffix): file_path for file_path, no_suffix in tasks}
+
+        with tqdm(total=total, desc="正在转码", unit="file") as pbar:
+            for future in as_completed(futures):
+                try:
+                    result_path = future.result()
+                    # ✅ 在进度条上方显示文件名称
+                    tqdm.write(f"转码完成: {result_path}")
+                except Exception as e:
+                    logging.exception("转码任务出错", exc_info=e)
+                finally:
+                    pbar.update(1)
 
     end_time = time.time()
     print('全部文件处理完成 ' + time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
